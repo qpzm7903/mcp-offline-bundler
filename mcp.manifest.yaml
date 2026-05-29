@@ -24,8 +24,8 @@ clients:
 servers:
   - name: chrome-devtools
     package: chrome-devtools-mcp
-    version: 0.18.1
-    bin: chrome-devtools
+    version: 1.1.1
+    bin: chrome-devtools-mcp
     transport: stdio
     smokeTestArgs:
       - "--help"
@@ -33,7 +33,7 @@ servers:
   - name: playwright
     package: "@playwright/mcp"
     version: 0.0.75
-    bin: playwright
+    bin: playwright-mcp
     transport: stdio
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
