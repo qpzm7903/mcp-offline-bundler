@@ -1,0 +1,67 @@
+name: Release MCP Offline Bundle
+
+# Publishes a GitHub Release with the offline bundle tar.gz + checksums.
+# Triggered by pushing a version tag (e.g. v0.1.0), or manually via
+# workflow_dispatch with an existing tag.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-linux-x64:
+    runs-on: ubuntu-latest
+
+    # Needed to create the GitHub Release and upload assets.
+    permissions:
+      contents: write
+
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build CLI
+        run: npm run build
+
+      - name: Build offline bundle
+        run: npm run bundle
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            dist/*.tar.gz \
+            dist/checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --generate-notes

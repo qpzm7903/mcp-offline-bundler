@@ -1,6 +1,6 @@
 {
   "name": "mcp-offline-bundler",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "CLI tool that builds offline runtime bundles for npm-based MCP servers (linux-x64).",
   "type": "module",
   "license": "MIT",
