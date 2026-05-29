@@ -1,5 +1,6 @@
-import { copyFile, mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, cp, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type { Manifest } from '../manifest/schema.js';
 import { loadManifest } from '../manifest/loadManifest.js';
 import { writePackageJson } from './generatePackageJson.js';
@@ -130,81 +131,118 @@ export async function buildBundle(options: BuildBundleOptions): Promise<BuildBun
   const outDir = options.outDir ?? 'dist';
   const paths = resolveBuildPaths(outDir);
 
-  // 1. Clear the work directory so the bundle is built from a clean slate.
-  await rm(paths.workDir, { recursive: true, force: true });
-  await mkdir(paths.bundleDir, { recursive: true });
-
-  // 2 + 3. Load and validate the manifest.
-  const manifest = await loadManifest(options.manifestPath);
-
-  // 4. Copy the manifest verbatim into the bundle as manifest.yaml.
-  const manifestCopyPath = join(paths.bundleDir, 'manifest.yaml');
-  await copyFile(options.manifestPath, manifestCopyPath);
-
-  // 5. Generate the runtime package.json.
-  const packageJsonPath = await writePackageJson(paths.bundleDir, manifest);
-
   const skipInstall = options.skipInstall ?? false;
   const skipSmokeTests = options.skipSmokeTests ?? skipInstall;
-
-  // 6. Install dependencies (unless skipped for offline/test runs).
-  let install: InstallDependenciesResult | null = null;
-  if (!skipInstall) {
-    install = await installDependencies({
-      bundleDir: paths.bundleDir,
-      manifest,
-      exec: options.installExec,
-    });
-  }
-
-  // 7. Generate wrappers.
-  const wrappers = await generateWrappers(paths.bundleDir, manifest);
-
-  // 8. Generate client configs.
-  const configs = await generateClientConfigs(paths.bundleDir, manifest);
-
-  // 9. Generate the README.
-  const readmePath = await writeReadme(paths.bundleDir, manifest);
-
-  // 10. Run smoke tests against the generated wrappers (needs deps installed).
-  let smokeTests: SmokeTestResult[] | null = null;
-  if (!skipSmokeTests) {
-    smokeTests = await runSmokeTests({
-      bundleDir: paths.bundleDir,
-      manifest,
-      exec: options.smokeExec,
-    });
-  }
-
-  // 11 + 12. Create the tar.gz archive and its checksums (unless skipped).
   const skipArchive = options.skipArchive ?? false;
-  let archive: CreateArchiveResult | null = null;
-  let checksums: GenerateChecksumsResult | null = null;
-  if (!skipArchive) {
-    const archiveName = manifest.bundle.archiveName ?? DEFAULT_ARCHIVE_NAME;
-    archive = await createArchive({
-      bundleDir: paths.bundleDir,
-      outDir: paths.outDir,
-      archiveName,
-    });
-    checksums = await generateChecksums({
-      archivePath: archive.archivePath,
-      outDir: paths.outDir,
-      bundleDir: paths.bundleDir,
-    });
+
+  // 1. Clear the work directory so the bundle is built from a clean slate.
+  await rm(paths.workDir, { recursive: true, force: true });
+
+  // When we run a real `npm install`, do it in an isolated staging directory
+  // under the OS temp dir rather than inside `<outDir>/work/bundle`. npm's
+  // dependency resolution dedupes against any ancestor `node_modules`, so
+  // installing inside this tool's own repo (or any project) would leave the
+  // bundle missing transitive deps — broken once extracted standalone. The
+  // finished bundle is relocated to its final path afterwards.
+  let stagingRoot: string | null = null;
+  let buildDir: string;
+  if (skipInstall) {
+    buildDir = paths.bundleDir;
+    await mkdir(buildDir, { recursive: true });
+  } else {
+    stagingRoot = await mkdtemp(join(tmpdir(), 'mcp-offline-bundle-'));
+    buildDir = join(stagingRoot, BUNDLE_SUBDIR);
+    await mkdir(buildDir, { recursive: true });
   }
 
-  return {
-    manifest,
-    paths,
-    manifestCopyPath,
-    packageJsonPath,
-    wrappers,
-    configs,
-    readmePath,
-    install,
-    smokeTests,
-    archive,
-    checksums,
-  };
+  try {
+    // 2 + 3. Load and validate the manifest.
+    const manifest = await loadManifest(options.manifestPath);
+
+    // 4. Copy the manifest verbatim into the bundle as manifest.yaml.
+    await copyFile(options.manifestPath, join(buildDir, 'manifest.yaml'));
+
+    // 5. Generate the runtime package.json.
+    await writePackageJson(buildDir, manifest);
+
+    // 6. Install dependencies (unless skipped for offline/test runs).
+    let install: InstallDependenciesResult | null = null;
+    if (!skipInstall) {
+      install = await installDependencies({
+        bundleDir: buildDir,
+        manifest,
+        exec: options.installExec,
+      });
+    }
+
+    // 7. Generate wrappers.
+    let wrappers = await generateWrappers(buildDir, manifest);
+
+    // 8. Generate client configs.
+    let configs = await generateClientConfigs(buildDir, manifest);
+
+    // 9. Generate the README.
+    await writeReadme(buildDir, manifest);
+
+    // 10. Run smoke tests against the generated wrappers (needs deps installed).
+    let smokeTests: SmokeTestResult[] | null = null;
+    if (!skipSmokeTests) {
+      smokeTests = await runSmokeTests({
+        bundleDir: buildDir,
+        manifest,
+        exec: options.smokeExec,
+      });
+    }
+
+    // Relocate the staged bundle to its final `<outDir>/work/bundle` location.
+    // Use copy + remove (rather than rename) so it works across filesystems
+    // (the temp dir is commonly on a different device than the repo), then
+    // re-run the path-dependent generators so the returned wrappers/configs
+    // reference the final bundle directory (cheap, deterministic).
+    if (stagingRoot !== null) {
+      await mkdir(dirname(paths.bundleDir), { recursive: true });
+      await cp(buildDir, paths.bundleDir, { recursive: true, verbatimSymlinks: true });
+      wrappers = await generateWrappers(paths.bundleDir, manifest);
+      configs = await generateClientConfigs(paths.bundleDir, manifest);
+    }
+
+    const manifestCopyPath = join(paths.bundleDir, 'manifest.yaml');
+    const packageJsonPath = join(paths.bundleDir, 'package.json');
+    const readmePath = join(paths.bundleDir, 'README.md');
+
+    // 11 + 12. Create the tar.gz archive and its checksums (unless skipped).
+    let archive: CreateArchiveResult | null = null;
+    let checksums: GenerateChecksumsResult | null = null;
+    if (!skipArchive) {
+      const archiveName = manifest.bundle.archiveName ?? DEFAULT_ARCHIVE_NAME;
+      archive = await createArchive({
+        bundleDir: paths.bundleDir,
+        outDir: paths.outDir,
+        archiveName,
+      });
+      checksums = await generateChecksums({
+        archivePath: archive.archivePath,
+        outDir: paths.outDir,
+        bundleDir: paths.bundleDir,
+      });
+    }
+
+    return {
+      manifest,
+      paths,
+      manifestCopyPath,
+      packageJsonPath,
+      wrappers,
+      configs,
+      readmePath,
+      install,
+      smokeTests,
+      archive,
+      checksums,
+    };
+  } finally {
+    if (stagingRoot !== null) {
+      await rm(stagingRoot, { recursive: true, force: true });
+    }
+  }
 }
