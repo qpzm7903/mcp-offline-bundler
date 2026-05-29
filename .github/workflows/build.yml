@@ -1,0 +1,59 @@
+name: Build MCP Offline Bundle
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "mcp.manifest.yaml"
+      - "src/**"
+      - "templates/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux-x64:
+    runs-on: ubuntu-latest
+
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build CLI
+        run: npm run build
+
+      - name: Build offline bundle
+        run: npm run bundle
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-offline-bundle-linux-x64
+          path: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,41 @@
+# Default manifest built by `npm run bundle` (and CI).
+#
+# Versions MUST be exact (no latest / * / ^ / ~ / >=). See CLAUDE.md.
+# These example servers come from the manifest, not from the core code.
+bundle:
+  name: mcp-offline-bundle
+  target: linux-x64
+  node: "20"
+  archiveName: mcp-offline-bundle-linux-x64
+
+install:
+  packageManager: npm
+  omitDev: true
+  env:
+    # Never download browsers as part of the bundle build.
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+clients:
+  claudeDesktop: true
+  codex: true
+  cursor: true
+  genericJson: true
+
+servers:
+  - name: chrome-devtools
+    package: chrome-devtools-mcp
+    version: 0.18.1
+    bin: chrome-devtools
+    transport: stdio
+    smokeTestArgs:
+      - "--help"
+
+  - name: playwright
+    package: "@playwright/mcp"
+    version: 0.0.75
+    bin: playwright
+    transport: stdio
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    smokeTestArgs:
+      - "--help"

@@ -1,0 +1,55 @@
+# Example manifest: browser MCP offline bundle.
+#
+# Bundles two stdio MCP servers that drive a Chrome instance over the
+# Chrome DevTools Protocol (CDP). The bundle does NOT include Chrome and
+# does NOT download Playwright browsers; you point the servers at a Chrome
+# you start yourself (see README.md "Start Chrome remote debugging").
+#
+# Versions MUST be exact (no latest / * / ^ / ~ / >=). The versions below
+# were pinned with `npm view <package> version` on 2026-05-29.
+bundle:
+  name: browser-mcp-offline-bundle
+  target: linux-x64
+  node: ">=20"
+  archiveName: mcp-offline-bundle-linux-x64
+
+install:
+  packageManager: npm
+  omitDev: true
+  env:
+    # Never download browsers as part of the bundle build.
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+servers:
+  - name: chrome-devtools
+    package: chrome-devtools-mcp
+    version: "1.1.1"
+    bin: chrome-devtools-mcp
+    transport: stdio
+    args:
+      - "--browser-url=http://127.0.0.1:9222"
+      - "--no-usage-statistics"
+      - "--no-performance-crux"
+    env:
+      CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1"
+      CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1"
+    smokeTestArgs:
+      - "--help"
+
+  - name: playwright
+    package: "@playwright/mcp"
+    version: "0.0.75"
+    bin: playwright-mcp
+    transport: stdio
+    args:
+      - "--cdp-endpoint=http://127.0.0.1:9222"
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    smokeTestArgs:
+      - "--help"
+
+clients:
+  claudeDesktop: true
+  codex: true
+  cursor: true
+  genericJson: true
