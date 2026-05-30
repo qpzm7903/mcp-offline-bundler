@@ -155,8 +155,10 @@ export function generateReadme(manifest: Manifest): string {
     '',
     '**`--browserUrl` connects but every operation hangs.**',
     'The upstream `/json/version` response may omit the host/port from',
-    '`webSocketDebuggerUrl` (common behind a proxy or with WSL2 host IPs). Pass',
-    'the full WebSocket endpoint instead, e.g.',
+    '`webSocketDebuggerUrl` (common behind a proxy or with WSL2 host IPs). If the',
+    'manifest enabled the `chrome-devtools-mcp` `install.patches` fix, the bundle',
+    'already rewrites the WebSocket host/port to match your `--browserUrl`. If not,',
+    'pass the full WebSocket endpoint instead, e.g.',
     '`--wsEndpoint=ws://<host>:<port>/devtools/browser/<id>`.',
     '',
   ];

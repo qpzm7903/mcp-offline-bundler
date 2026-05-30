@@ -113,6 +113,30 @@ export const bundleSchema = z
   .strict();
 
 /**
+ * Zod schema for a single post-install patch: an exact find/replace applied to
+ * a file inside an installed package. Used to apply targeted upstream bug fixes
+ * to the vendored `node_modules` after install. Kept generic — no package is
+ * baked into the tool; the patch details come entirely from the manifest.
+ */
+export const patchSchema = z
+  .object({
+    package: z
+      .string({ required_error: 'patch.package is required' })
+      .min(1, 'patch.package is required'),
+    file: z
+      .string({ required_error: 'patch.file is required' })
+      .min(1, 'patch.file is required'),
+    find: z.string({ required_error: 'patch.find is required' }).min(1, 'patch.find is required'),
+    replace: z.string({
+      required_error: 'patch.replace is required',
+      invalid_type_error: 'patch.replace must be a string',
+    }),
+    /** Exact number of occurrences required; when omitted, at least one. */
+    count: z.number().int().positive().optional(),
+  })
+  .strict();
+
+/**
  * Zod schema for the install configuration block.
  */
 export const installSchema = z
@@ -120,9 +144,10 @@ export const installSchema = z
     packageManager: z.literal('npm').default('npm'),
     omitDev: z.boolean().default(true),
     env: stringRecordSchema.default({}),
+    patches: z.array(patchSchema).default([]),
   })
   .strict()
-  .default({ packageManager: 'npm', omitDev: true, env: {} });
+  .default({ packageManager: 'npm', omitDev: true, env: {}, patches: [] });
 
 /**
  * Zod schema for the clients configuration block.
@@ -163,6 +188,11 @@ export type BundleConfig = z.infer<typeof bundleSchema>;
  * The validated install configuration block.
  */
 export type InstallConfig = z.infer<typeof installSchema>;
+
+/**
+ * A single validated post-install patch entry.
+ */
+export type PatchConfig = z.infer<typeof patchSchema>;
 
 /**
  * The validated clients configuration block.

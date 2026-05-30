@@ -233,11 +233,19 @@ wrappers handle this two ways:
 
 ### `--browserUrl` hangs behind a proxy or with a non-default port
 
-If `--browserUrl` connects but every browser operation hangs, the upstream
-`/json/version` endpoint may be returning a `webSocketDebuggerUrl` without the
-correct host/port (common behind an Nginx/port-forward, or with WSL2 host IPs).
-This is a limitation of the upstream `chrome-devtools-mcp` / puppeteer-core, not
-the bundle. Work around it by passing the **full** WebSocket endpoint instead:
+Upstream `chrome-devtools-mcp` (puppeteer-core) trusts the
+`webSocketDebuggerUrl` returned by `/json/version`, which behind an
+Nginx/port-forward proxy (or with WSL2 host IPs) can come back without the
+correct host/port — so `--browserUrl` connects but every operation hangs.
+
+The example manifest ships a **post-install patch** (`install.patches`) that
+rewrites that WebSocket URL's host:port back to the endpoint you passed in
+`--browserUrl`, so the bundled server works with proxied / non-default ports
+out of the box. See the `patches:` block in
+`examples/browser-mcps/mcp.manifest.yaml`.
+
+If you build without that patch, work around it by passing the **full**
+WebSocket endpoint instead:
 
 ```text
 --wsEndpoint=ws://<host>:<port>/devtools/browser/<id>
@@ -245,6 +253,24 @@ the bundle. Work around it by passing the **full** WebSocket endpoint instead:
 
 Get `<id>` from `curl http://<host>:<port>/json/version` and use the path from
 its `webSocketDebuggerUrl` (adding the host/port back if missing).
+
+### Applying upstream patches in your own manifest
+
+`install.patches` applies a deterministic exact find/replace to a file inside an
+installed package after `npm install`, for targeted upstream bug fixes:
+
+```yaml
+install:
+  patches:
+    - package: some-mcp
+      file: build/index.js
+      count: 1                 # optional: required number of matches
+      find: "buggy code"
+      replace: "fixed code"
+```
+
+A missing target file or a `find` that no longer matches (e.g. after a version
+bump) fails the build instead of silently shipping an unpatched bundle.
 
 You can also print a config without unpacking a bundle:
 

@@ -12,6 +12,7 @@ import {
   type ExecaLike,
   type InstallDependenciesResult,
 } from './installDependencies.js';
+import { applyPatches, type AppliedPatch } from './applyPatches.js';
 import {
   runSmokeTests,
   type SmokeExecaLike,
@@ -100,6 +101,8 @@ export interface BuildBundleResult {
   readmePath: string;
   /** Install result, or null when install was skipped. */
   install: InstallDependenciesResult | null;
+  /** Patches applied after install (empty when none or install was skipped). */
+  patches: AppliedPatch[];
   /** Smoke test results, or null when smoke tests were skipped. */
   smokeTests: SmokeTestResult[] | null;
   /** Archive result, or null when archiving was skipped. */
@@ -167,12 +170,15 @@ export async function buildBundle(options: BuildBundleOptions): Promise<BuildBun
 
     // 6. Install dependencies (unless skipped for offline/test runs).
     let install: InstallDependenciesResult | null = null;
+    let patches: AppliedPatch[] = [];
     if (!skipInstall) {
       install = await installDependencies({
         bundleDir: buildDir,
         manifest,
         exec: options.installExec,
       });
+      // 6b. Apply manifest-declared post-install patches to vendored deps.
+      patches = await applyPatches(buildDir, manifest);
     }
 
     // 7. Generate wrappers.
@@ -236,6 +242,7 @@ export async function buildBundle(options: BuildBundleOptions): Promise<BuildBun
       configs,
       readmePath,
       install,
+      patches,
       smokeTests,
       archive,
       checksums,

@@ -31,6 +31,16 @@ install:
   env:
     # Never download browsers as part of the bundle build.
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+  # Post-install fix for an upstream chrome-devtools-mcp/puppeteer-core bug:
+  # getWSEndpoint() trusts the webSocketDebuggerUrl from /json/version, which
+  # behind a proxy/port-forward can omit or mismatch the host:port. Rewrite it
+  # to the endpoint the user provided so --browserUrl works.
+  patches:
+    - package: chrome-devtools-mcp
+      file: build/src/third_party/index.js
+      count: 1
+      find: "return data.webSocketDebuggerUrl;"
+      replace: "{ try { const __u = new URL(browserURL), __w = new URL(data.webSocketDebuggerUrl); __w.host = __u.host; return __w.toString(); } catch { return data.webSocketDebuggerUrl; } }"
 
 servers:
   - name: chrome-devtools

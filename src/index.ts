@@ -150,7 +150,8 @@ export async function runBuild(
     const installNote =
       result.install === null
         ? 'dependencies not installed (skipped)'
-        : `dependencies installed via npm ${result.install.command}`;
+        : `dependencies installed via npm ${result.install.command}` +
+          (result.patches.length > 0 ? ` (${result.patches.length} patch(es) applied)` : '');
     const smokeNote =
       result.smokeTests === null
         ? 'smoke tests skipped'
