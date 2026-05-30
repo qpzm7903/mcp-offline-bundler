@@ -60,14 +60,14 @@ export function createProgram(): Command {
     .description('Run the full offline bundle build pipeline.')
     .requiredOption('-m, --manifest <path>', 'path to the manifest file')
     .option('--out <dir>', 'output directory', 'dist')
-    .option('--skip-install', 'skip npm install and smoke tests (offline layout only)', false)
-    .option('--skip-smoke-tests', 'install dependencies but skip smoke tests', false)
+    .option('--skip-install', 'skip npm install and smoke tests (offline layout only)')
+    .option('--skip-smoke-tests', 'install dependencies but skip smoke tests')
     .action(
       async (options: {
         manifest: string;
         out: string;
-        skipInstall: boolean;
-        skipSmokeTests: boolean;
+        skipInstall?: boolean;
+        skipSmokeTests?: boolean;
       }) => {
         await runBuild(options.manifest, options.out, {
           skipInstall: options.skipInstall,

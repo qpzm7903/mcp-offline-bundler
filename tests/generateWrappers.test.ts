@@ -25,7 +25,7 @@ function serverWith(overrides: Record<string, unknown>): ServerConfig {
 }
 
 describe('generateWrapperScript', () => {
-  it('produces a deterministic bash wrapper with no env', () => {
+  it('produces a deterministic bash wrapper with no env and no args', () => {
     const server = serverWith({ name: 'plain', bin: 'plain-bin' });
     expect(generateWrapperScript(server)).toBe(
       [
@@ -37,10 +37,43 @@ describe('generateWrapperScript', () => {
         'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
         'BUNDLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"',
         '',
-        'exec "$BUNDLE_DIR/node_modules/.bin/plain-bin" "$@"',
+        'BIN="$BUNDLE_DIR/node_modules/.bin/plain-bin"',
+        '',
+        '# Extra arguments via the MCP_BUNDLE_ARGS env var, for MCP clients that forward',
+        '# env vars but not CLI arguments. Whitespace-separated, e.g.',
+        '# MCP_BUNDLE_ARGS="--browserUrl=http://127.0.0.1:9223".',
+        'declare -a ENV_ARGS=()',
+        'if [ -n "${MCP_BUNDLE_ARGS:-}" ]; then',
+        '  read -r -a ENV_ARGS <<< "${MCP_BUNDLE_ARGS}"',
+        'fi',
+        '',
+        'exec "$BIN" "${ENV_ARGS[@]}" "$@"',
         '',
       ].join('\n'),
     );
+  });
+
+  it('bakes manifest args as a fallback when launched with no argv', () => {
+    const server = serverWith({
+      name: 'cd',
+      bin: 'chrome-devtools-mcp',
+      args: ['--browserUrl=http://127.0.0.1:9222', '--no-performanceCrux'],
+    });
+    const script = generateWrapperScript(server);
+    expect(script).toContain(
+      'DEFAULT_ARGS=("--browserUrl=http://127.0.0.1:9222" "--no-performanceCrux")',
+    );
+    // When the client passes argv or MCP_BUNDLE_ARGS, those win; otherwise the
+    // baked defaults are used.
+    expect(script).toContain('if [ "$#" -gt 0 ] || [ "${#ENV_ARGS[@]}" -gt 0 ]; then');
+    expect(script).toContain('  exec "$BIN" "${ENV_ARGS[@]}" "$@"');
+    expect(script).toContain('exec "$BIN" "${DEFAULT_ARGS[@]}"');
+  });
+
+  it('reads extra args from MCP_BUNDLE_ARGS for clients that drop argv', () => {
+    const script = generateWrapperScript(serverWith({}));
+    expect(script).toContain('if [ -n "${MCP_BUNDLE_ARGS:-}" ]; then');
+    expect(script).toContain('read -r -a ENV_ARGS <<< "${MCP_BUNDLE_ARGS}"');
   });
 
   it('is byte-for-byte stable across calls', () => {
@@ -64,9 +97,10 @@ describe('generateWrapperScript', () => {
     expect(script.indexOf('ALPHA')).toBeLessThan(script.indexOf('ZED'));
   });
 
-  it('execs node_modules/.bin/{bin} relative to the bundle dir and forwards args', () => {
+  it('points BIN at node_modules/.bin/{bin} relative to the bundle dir and forwards args', () => {
     const script = generateWrapperScript(serverWith({ bin: 'my-bin' }));
-    expect(script).toContain('exec "$BUNDLE_DIR/node_modules/.bin/my-bin" "$@"');
+    expect(script).toContain('BIN="$BUNDLE_DIR/node_modules/.bin/my-bin"');
+    expect(script).toContain('exec "$BIN" "${ENV_ARGS[@]}" "$@"');
   });
 
   it('escapes shell metacharacters in env default values', () => {

@@ -38,10 +38,11 @@ servers:
     version: "1.1.1"
     bin: chrome-devtools-mcp
     transport: stdio
+    # chrome-devtools-mcp 1.x uses camelCase flags (--browserUrl, not
+    # --browser-url). Usage statistics are disabled via the env var below.
     args:
-      - "--browser-url=http://127.0.0.1:9222"
-      - "--no-usage-statistics"
-      - "--no-performance-crux"
+      - "--browserUrl=http://127.0.0.1:9222"
+      - "--no-performanceCrux"
     env:
       CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1"
       CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1"

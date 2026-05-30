@@ -158,7 +158,7 @@ curl http://127.0.0.1:9222/json/version
 
 If `127.0.0.1` does not work from WSL, find the Windows host IP from the
 `nameserver` line of `/etc/resolv.conf` and use that IP in the server's
-`--browser-url` / `--cdp-endpoint` argument instead.
+`--browserUrl` / `--cdp-endpoint` argument instead.
 
 ## Configure MCP clients
 
@@ -180,9 +180,8 @@ your client's config file. Example for a generic client:
     "chrome-devtools": {
       "command": "/home/yourname/tools/mcp-offline-bundle/bin/chrome-devtools",
       "args": [
-        "--browser-url=http://127.0.0.1:9222",
-        "--no-usage-statistics",
-        "--no-performance-crux"
+        "--browserUrl=http://127.0.0.1:9222",
+        "--no-performanceCrux"
       ],
       "env": {
         "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS": "1",
@@ -194,6 +193,58 @@ your client's config file. Example for a generic client:
 ```
 
 This tool never edits your client config files for you.
+
+> **Note on flag names.** `chrome-devtools-mcp` 1.x uses camelCase flags
+> (`--browserUrl`, `--no-performanceCrux`), not `--browser-url`. Unknown flags
+> are silently ignored, so a typo makes the server launch its own Chrome
+> instead of connecting to yours.
+
+### Clients that drop configured `args`
+
+Some MCP clients launch the `command` but do **not** forward the configured
+`args` to the process (their `process.argv` ends up empty). The generated
+wrappers handle this two ways:
+
+- If the wrapper is launched with **no** arguments, it falls back to the
+  arguments baked in from the manifest, so the server still starts configured.
+- You can pass extra arguments through the **`MCP_BUNDLE_ARGS`** environment
+  variable (whitespace-separated). Use this when a client forwards `env` but not
+  `args`. For example, with [opencode](https://github.com/sst/opencode):
+
+  ```json
+  {
+    "mcp": {
+      "chrome-devtools": {
+        "type": "local",
+        "enabled": true,
+        "command": ["/abs/path/mcp-offline-bundle/bin/chrome-devtools"],
+        "environment": {
+          "MCP_BUNDLE_ARGS": "--browserUrl=http://172.19.144.1:9223 --no-performanceCrux",
+          "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS": "1",
+          "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS": "1"
+        }
+      }
+    }
+  }
+  ```
+
+  When `MCP_BUNDLE_ARGS` is set, it replaces the manifest defaults; any real
+  CLI args the client does pass are still appended and take precedence.
+
+### `--browserUrl` hangs behind a proxy or with a non-default port
+
+If `--browserUrl` connects but every browser operation hangs, the upstream
+`/json/version` endpoint may be returning a `webSocketDebuggerUrl` without the
+correct host/port (common behind an Nginx/port-forward, or with WSL2 host IPs).
+This is a limitation of the upstream `chrome-devtools-mcp` / puppeteer-core, not
+the bundle. Work around it by passing the **full** WebSocket endpoint instead:
+
+```text
+--wsEndpoint=ws://<host>:<port>/devtools/browser/<id>
+```
+
+Get `<id>` from `curl http://<host>:<port>/json/version` and use the path from
+its `webSocketDebuggerUrl` (adding the host/port back if missing).
 
 You can also print a config without unpacking a bundle:
 

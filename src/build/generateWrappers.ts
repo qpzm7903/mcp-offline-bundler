@@ -19,6 +19,14 @@ function escapeForDoubleQuotes(value: string): string {
 }
 
 /**
+ * Environment variable an MCP client can set to pass extra CLI arguments to a
+ * server when the client forwards env vars but not argv (e.g. some stdio MCP
+ * clients drop the configured `args`). The value is whitespace-split into
+ * separate arguments.
+ */
+export const EXTRA_ARGS_ENV = 'MCP_BUNDLE_ARGS';
+
+/**
  * Build the bash wrapper script content for a single server.
  *
  * The generated script:
@@ -27,7 +35,12 @@ function escapeForDoubleQuotes(value: string): string {
  *   `node_modules/.bin` is found at the bundle root regardless of cwd
  * - exports each `server.env` entry using `${VAR:-default}` so user-provided
  *   values win and defaults only apply when unset
- * - execs `node_modules/.bin/{server.bin}` forwarding all user args
+ * - reads extra arguments from the `MCP_BUNDLE_ARGS` env var, for clients that
+ *   forward env vars but not argv
+ * - execs `node_modules/.bin/{server.bin}`, forwarding all user args; when the
+ *   client passes no argv and sets no `MCP_BUNDLE_ARGS`, the manifest's
+ *   configured `args` are applied as a fallback so the server still starts with
+ *   a working configuration even if the client dropped them
  *
  * The wrapper never writes informational logs to stdout; only the executed
  * MCP server speaks on stdout.
@@ -58,7 +71,34 @@ export function generateWrapperScript(server: ServerConfig): string {
   }
 
   const bin = escapeForDoubleQuotes(server.bin);
-  lines.push(`exec "$BUNDLE_DIR/node_modules/.bin/${bin}" "$@"`);
+  lines.push(`BIN="$BUNDLE_DIR/node_modules/.bin/${bin}"`);
+  lines.push('');
+
+  // Extra arguments from the environment, for MCP clients that forward env
+  // vars but not CLI arguments. Whitespace-separated.
+  lines.push(`# Extra arguments via the ${EXTRA_ARGS_ENV} env var, for MCP clients that forward`);
+  lines.push('# env vars but not CLI arguments. Whitespace-separated, e.g.');
+  lines.push(`# ${EXTRA_ARGS_ENV}="--browserUrl=http://127.0.0.1:9223".`);
+  lines.push('declare -a ENV_ARGS=()');
+  lines.push(`if [ -n "\${${EXTRA_ARGS_ENV}:-}" ]; then`);
+  lines.push(`  read -r -a ENV_ARGS <<< "\${${EXTRA_ARGS_ENV}}"`);
+  lines.push('fi');
+  lines.push('');
+
+  if (server.args.length > 0) {
+    const quoted = server.args.map((arg) => `"${escapeForDoubleQuotes(arg)}"`).join(' ');
+    lines.push('# Manifest-configured default arguments. Applied only when the wrapper is');
+    lines.push(`# launched with no CLI args and no ${EXTRA_ARGS_ENV}, so MCP clients that drop`);
+    lines.push('# configured args still start the server with a working configuration.');
+    lines.push(`DEFAULT_ARGS=(${quoted})`);
+    lines.push('');
+    lines.push('if [ "$#" -gt 0 ] || [ "${#ENV_ARGS[@]}" -gt 0 ]; then');
+    lines.push('  exec "$BIN" "${ENV_ARGS[@]}" "$@"');
+    lines.push('fi');
+    lines.push('exec "$BIN" "${DEFAULT_ARGS[@]}"');
+  } else {
+    lines.push('exec "$BIN" "${ENV_ARGS[@]}" "$@"');
+  }
   lines.push('');
 
   return lines.join('\n');
